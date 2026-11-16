@@ -1,0 +1,53 @@
+name: uptime
+
+on:
+  schedule:
+    # 06:00 UTC = 10:00 თბილისით, ანუ როცა კლინიკა პაციენტს იღებს
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: შემოწმება
+        run: |
+          chmod +x scripts/check.sh
+          ./scripts/check.sh
+
+      - name: გვერდის განახლება
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          tmp = pathlib.Path(os.environ.get("RUNNER_TEMP", "/tmp"))
+          page = pathlib.Path("status/README.md")
+          text = page.read_text(encoding="utf-8")
+          for name in ("summary", "recent"):
+              body = (tmp / f"{name}.md").read_text(encoding="utf-8").strip()
+              text = re.sub(
+                  rf"<!-- {name}:start -->.*?<!-- {name}:end -->",
+                  f"<!-- {name}:start -->\n{body}\n<!-- {name}:end -->",
+                  text, flags=re.S)
+          page.write_text(text, encoding="utf-8")
+          PY
+
+      - name: კომიტი
+        run: |
+          git config user.name  "Yazo13"
+          git config user.email "126243507+Yazo13@users.noreply.github.com"
+          git add status
+          if git diff --staged --quiet; then
+            echo "ცვლილება არ არის, კომიტი არ ხდება"
+          else
+            git commit -m "uptime: $(date -u +%F) check"
+            git push
+          fi
